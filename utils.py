@@ -29,6 +29,12 @@ def convert_hagn_star_units(stars: dict, snap, sim: ramses_sim):
     sim.get_snap_exps(param_save=False)
     aexp = sim.aexps[sim.snap_numbers == snap]
 
+    assert len(aexp) == 1, f"couldn't find requested snap: {snap:d} in list:" + str(
+        sim.snap_numbers
+    )
+
+    # print(aexp, sim.snap_numbers, snap)
+
     unit_d = sim.cosmo["unit_d"]
     unit_l = sim.cosmo["unit_l"]
 
@@ -36,8 +42,18 @@ def convert_hagn_star_units(stars: dict, snap, sim: ramses_sim):
 
     stars["mass"] *= unit_m
 
+    fried_path = os.path.join(
+        os.path.dirname(__file__), "freidmann/"
+    )  # create friedmann files
+    # in module's directory
+    if not os.path.isdir(fried_path):
+        os.makedirs(fried_path, exist_ok=True)
+
     stars["age"] = convert_star_time(
-        stars["birth_time"], sim, aexp, cosmo_fname="/home/jlewis/hagn/freidmann.txt"
+        stars["birth_time"],
+        sim,
+        aexp,
+        cosmo_fname=os.path.join(fried_path, str(snap) + ".txt"),
     )
 
     del stars["birth_time"]

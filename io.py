@@ -104,25 +104,27 @@ def read_hagn_star(fname: str, tgt_pos=None, tgt_r=None, tgt_fields: list = None
         for step in range(1, max_step):
 
             cur_ndim = ndims[step]
-            if cur_ndim > 1:
-                loc_read = np.empty((nstars, cur_ndim), dtype=dtypes[step])
-                for idim in range(cur_ndim):
-                    loc_read[:, idim] = read_record(f, nstars, dtypes[step])
-            else:
-                loc_read = np.empty(nstars, dtype=dtypes[step])
-                loc_read[:] = read_record(f, nstars, dtypes[step])
-
-            if pos_filt:
-                loc_read = loc_read[tgt_in_file]
-
-            if names[step] == "ids":
-                loc_read = abs(loc_read)
 
             if names[step] in tgt_fields:
+                if cur_ndim > 1:
+                    loc_read = np.empty((nstars, cur_ndim), dtype=dtypes[step])
+                    for idim in range(cur_ndim):
+                        loc_read[:, idim] = read_record(f, nstars, dtypes[step])
+                else:
+                    loc_read = np.empty(nstars, dtype=dtypes[step])
+                    loc_read[:] = read_record(f, nstars, dtypes[step])
+
+                if pos_filt:
+                    loc_read = loc_read[tgt_in_file]
+
+                if names[step] == "ids":
+                    loc_read = abs(loc_read)
+
                 out[names[step]] = loc_read
 
-            # print(step, names[step], names[step] in tgt_fields)
-            # print(loc_read.min(), loc_read.max())
+            else:  # skip reading
+                byte_size = np.dtype(dtypes[step]).itemsize
+                f.seek(nstars * byte_size * cur_ndim + 2 * 4 * cur_ndim, 1)
 
         return out
 
@@ -195,13 +197,12 @@ def get_pid_HAGN_stars(snap, pids, fields, sim: ramses_sim, pos=None, rgal=None)
     for ifile, file in enumerate(files):
         # print(ifile, nfound)
         fpath = os.path.join(star_dir, file)
-        if pos is not None and rgal is not None:
-            out = read_hagn_star(fpath, tgt_pos=pos, tgt_r=rgal, tgt_fields=fields)
-        else:
-            out = read_hagn_star(fpath, tgt_fields=fields)
 
-        # print(out["ids"])
-        if len(out) == 0:
+        out = read_hagn_star(fpath, tgt_pos=pos, tgt_r=rgal, tgt_fields=fields)
+
+        # print(out.keys())
+
+        if len(out) == 0 or len(out["ids"]) == 0:
             continue
 
         matches = np.isin(out["ids"], pids)
@@ -212,7 +213,7 @@ def get_pid_HAGN_stars(snap, pids, fields, sim: ramses_sim, pos=None, rgal=None)
 
         nfound += cur_found
 
-    print(f"Found {nfound:d} stellar particles")
+    # print(f"Found {nfound:d} stellar particles")
 
     assert (
         nfound == npart
