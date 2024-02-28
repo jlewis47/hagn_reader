@@ -1,4 +1,4 @@
-from f90_tools.IO import read_record
+from f90_tools.IO import read_record, read_tgt_fields
 from .utils import convert_hagn_star_units, adaptahop_to_code_units
 
 # from zoom_analysis.halo_maker.read_treebricks import convert_brick_units
@@ -49,7 +49,6 @@ def read_hagn_star(fname: str, tgt_pos=None, tgt_r=None, tgt_fields: list = None
         print("Available fields are: ", names)
         print("Requested fields are: ", tgt_fields)
         return out
-    max_step = max(tgt_field_order) + 1
 
     tgt_fields = [names[i] for i in tgt_field_order]
 
@@ -94,37 +93,19 @@ def read_hagn_star(fname: str, tgt_pos=None, tgt_r=None, tgt_fields: list = None
 
             # print(tgt_in_file, len(tgt_in_file))
 
-            pos_filt = True
-
             pos = pos[:, tgt_in_file].T
 
         if "pos" in tgt_fields:
             out["pos"] = pos
 
-        for step in range(1, max_step):
-
-            cur_ndim = ndims[step]
-
-            if names[step] in tgt_fields:
-                if cur_ndim > 1:
-                    loc_read = np.empty((nstars, cur_ndim), dtype=dtypes[step])
-                    for idim in range(cur_ndim):
-                        loc_read[:, idim] = read_record(f, nstars, dtypes[step])
-                else:
-                    loc_read = np.empty(nstars, dtype=dtypes[step])
-                    loc_read[:] = read_record(f, nstars, dtypes[step])
-
-                if pos_filt:
-                    loc_read = loc_read[tgt_in_file]
-
-                if names[step] == "ids":
-                    loc_read = abs(loc_read)
-
-                out[names[step]] = loc_read
-
-            else:  # skip reading
-                byte_size = np.dtype(dtypes[step]).itemsize
-                f.seek(nstars * byte_size * cur_ndim + 2 * 4 * cur_ndim, 1)
+        read_tgt_fields(
+            out,
+            tgt_fields,
+            list(zip(names[1:], ndims[1:], dtypes[1:])),
+            f,
+            nstars,
+            args=tgt_in_file,
+        )
 
         return out
 
