@@ -1,4 +1,6 @@
+from re import I
 from f90_tools.IO import read_record, read_tgt_fields
+from zoom_analysis.halo_maker.read_treebricks import convert_brick_units
 from .utils import convert_hagn_star_units, adaptahop_to_code_units
 
 # from zoom_analysis.halo_maker.read_treebricks import convert_brick_units
@@ -84,14 +86,14 @@ def read_hagn_star(fname: str, tgt_pos=None, tgt_r=None, tgt_fields: list = None
             if not cond:
                 return out
 
+            # print(cond, xmax, xmin, ymax, ymin, zmax, zmin)
+
             pos_tree = cKDTree(pos.T, boxsize=1.0 + 1e-10)
 
             tgt_in_file = pos_tree.query_ball_point(tgt_pos, tgt_r)
 
             if len(tgt_in_file) == 0:
                 return out
-
-            # print(tgt_in_file, len(tgt_in_file))
 
             pos = pos[:, tgt_in_file].T
 
@@ -105,6 +107,7 @@ def read_hagn_star(fname: str, tgt_pos=None, tgt_r=None, tgt_fields: list = None
             f,
             nstars,
             args=tgt_in_file,
+            debug=False,
         )
 
         return out
@@ -169,6 +172,7 @@ def get_pid_HAGN_stars(snap, pids, fields, sim: ramses_sim, pos=None, rgal=None)
     found_stars = {}
     npart = len(pids)
     nfound = 0
+
     for field in fields:
         found_stars[field] = np.empty(npart, "f4")
 
@@ -186,15 +190,24 @@ def get_pid_HAGN_stars(snap, pids, fields, sim: ramses_sim, pos=None, rgal=None)
         if len(out) == 0 or len(out["ids"]) == 0:
             continue
 
+        out["ids"] = np.abs(out["ids"])
+
         matches = np.isin(out["ids"], pids)
+        # print(matches.sum(), out["ids"], pids)
         cur_found = matches.sum()
+
+        # print(cur_found, nfound, npart, len(out["ids"]))
+        # print(len(out[field]), len(out[field][matches]))
+
+        if cur_found == 0:
+            continue
 
         for field in found_stars.keys():
             found_stars[field][nfound : nfound + cur_found] = out[field][matches]
 
         nfound += cur_found
 
-    # print(f"Found {nfound:d} stellar particles")
+    print(f"Found {nfound:d} stellar particles")
 
     assert (
         nfound == npart
@@ -427,3 +440,14 @@ def get_hagn_brickfile_stpids(fname, tgt_gid, sim: ramses_sim, star=True):
             # read_record(src, 2, np.float32)
 
     return [], -1, []  # didn't find anything return
+
+
+def read_hagn_snap_brickfile(snap, sim):
+
+    fname = f"/data40b/Horizon-AGN/TREE_STARS/tree_bricks{snap:03d}"
+
+    brick = read_hagn_brickfile(fname, star=True)
+
+    convert_brick_units(brick, sim)
+
+    return brick

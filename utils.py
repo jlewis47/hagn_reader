@@ -12,6 +12,7 @@ def get_hagn_sim():
         nml="things_for_restart/cosmo.nml",
         info_path="INFO",
         output_path="OUTPUT_DIR",
+        sink_path="/data40a/Horizon-AGN/SINK_PROPS",
     )
 
 
@@ -35,28 +36,33 @@ def convert_hagn_star_units(stars: dict, snap, sim: ramses_sim):
 
     # print(aexp, sim.snap_numbers, snap)
 
-    unit_d = sim.cosmo["unit_d"]
-    unit_l = sim.cosmo["unit_l"]
+    if "mass" in stars:
+        unit_d = sim.cosmo["unit_d"]
+        unit_l = sim.cosmo["unit_l"]
 
-    unit_m = unit_d * unit_l**3 / 2e33  # msun
+        unit_m = unit_d * unit_l**3 / 2e33  # msun
 
-    stars["mass"] *= unit_m
+        stars["mass"] *= unit_m
 
-    fried_path = os.path.join(
-        os.path.dirname(__file__), "freidmann/"
-    )  # create friedmann files
-    # in module's directory
-    if not os.path.isdir(fried_path):
-        os.makedirs(fried_path, exist_ok=True)
+    if "birth_time" in stars:
+        fried_path = os.path.join(
+            os.path.dirname(__file__), "freidmann/"
+        )  # create friedmann files
+        # in module's directory
+        if not os.path.isdir(fried_path):
+            os.makedirs(fried_path, exist_ok=True)
 
-    stars["age"] = convert_star_time(
-        stars["birth_time"],
-        sim,
-        aexp,
-        cosmo_fname=os.path.join(fried_path, str(snap) + ".txt"),
-    )
+        stars["age"] = convert_star_time(
+            stars["birth_time"],
+            sim,
+            aexp,
+            cosmo_fname=os.path.join(fried_path, str(snap) + ".txt"),
+        )
 
-    del stars["birth_time"]
+        del stars["birth_time"]
+
+    if "ids" in stars:
+        stars["ids"] = np.abs(stars["ids"])
 
 
 def hagn_z_to_snap(z):
