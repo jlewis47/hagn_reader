@@ -2,6 +2,8 @@ import os
 from f90_tools.IO import read_record
 import numpy as np
 import h5py
+from gremlin.read_sim_params import ramses_sim
+from hagn.utils import get_hagn_sim
 
 
 def array_dict(datas):
@@ -66,7 +68,9 @@ def get_halos_cat(snap):
 
 def make_super_cat(snap, outf=None, overwrite=False):
 
-    fname = "super_cat_{snap}.h5"
+    sim = get_hagn_sim()
+
+    fname = f"super_cat_{snap}.h5"
 
     exists = False
     if outf is not None:
@@ -77,7 +81,7 @@ def make_super_cat(snap, outf=None, overwrite=False):
     if exists and not overwrite:
         print(f"Super catalogue {outf} already exists")
         # read
-        with h5py.File(outf, "r") as f:
+        with h5py.File(os.path.join(outf, fname), "r") as f:
             return {key: f[key][...] for key in f.keys()}
 
     else:
@@ -129,8 +133,33 @@ def make_super_cat(snap, outf=None, overwrite=False):
         print("super cat keys are: ", super_cat.keys())
 
         if outf is not None:
+            super_cat = convert_cat_units(super_cat, sim, snap)
             with h5py.File(os.path.join(outf, fname), "w") as f:
                 for key in super_cat.keys():
                     f.create_dataset(key, data=super_cat[key])
 
         return super_cat
+
+
+def get_cat_gids(cat, gids):
+    filt = np.in1d(cat["gid"], gids)
+    return {key: cat[key][filt] for key in cat.keys()}
+
+
+def get_cat_hids(cat, hids):
+    filt = np.in1d(cat["hid"], hids)
+    return {key: cat[key][filt] for key in cat.keys()}
+
+
+def convert_cat_units(cat, sim: ramses_sim, snap):
+
+    aexp = sim.get_snap_exps(snap)
+
+    l_sim = sim.cosmo["unit_l"] / 3.08e24 / sim.aexp_stt * aexp  # pMpc
+
+    for pk in ["x", "y", "z", "hx", "hy", "hz"]:
+        cat[pk] += l_sim * 0.5
+    for k in ["x", "y", "z", "hx", "hy", "hz", "rvir", "rgal"]:
+        cat[pk] /= l_sim
+
+    return cat
