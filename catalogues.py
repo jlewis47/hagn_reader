@@ -1,6 +1,7 @@
 import os
 from f90_tools.IO import read_record
 import numpy as np
+import h5py
 
 
 def array_dict(datas):
@@ -63,52 +64,69 @@ def get_halos_cat(snap):
     return array_dict(datas)
 
 
-def make_super_cat(snap):
+def make_super_cat(snap, outf=None, overwrite=False):
 
-    halos = get_halos_cat(snap)
-    halo_gals = get_halogals_cat(snap)
-    gals = get_gals_cat(snap)
-    galsfrs = get_galsfr_cat(snap)
+    exists = False
+    if outf is not None:
+        exists = os.path.exists(outf)
 
-    # match gal ids in gals and gals_sfrs
+    if exists and not overwrite:
+        print(f"Super catalogue {outf} already exists")
+        # read
+        with h5py.File(outf, "r") as f:
+            return {key: f[key][...] for key in f.keys()}
 
-    _, sfrgal_args, gal_args = np.intersect1d(
-        galsfrs["gid"], gals["gid"], return_indices=True
-    )
+    else:
 
-    super_cat = {}
+        halos = get_halos_cat(snap)
+        halo_gals = get_halogals_cat(snap)
+        gals = get_gals_cat(snap)
+        galsfrs = get_galsfr_cat(snap)
 
-    for key in galsfrs.keys():
-        super_cat[key] = galsfrs[key][sfrgal_args]
+        # match gal ids in gals and gals_sfrs
 
-    for key in gals.keys():
-        if not key in super_cat.keys():
-            super_cat[key] = gals[key][gal_args]
+        _, sfrgal_args, gal_args = np.intersect1d(
+            galsfrs["gid"], gals["gid"], return_indices=True
+        )
 
-    _, super_args, hg_args = np.intersect1d(
-        super_cat["gid"], halo_gals["gid"], return_indices=True
-    )
+        super_cat = {}
 
-    for key in super_cat.keys():
-        super_cat[key] = super_cat[key][super_args]
+        for key in galsfrs.keys():
+            super_cat[key] = galsfrs[key][sfrgal_args]
 
-    for key in halo_gals.keys():
-        if not key in super_cat.keys():
-            super_cat[key] = halo_gals[key][hg_args]
+        for key in gals.keys():
+            if not key in super_cat.keys():
+                super_cat[key] = gals[key][gal_args]
 
-    # match halos and halo_gals
+        _, super_args, hg_args = np.intersect1d(
+            super_cat["gid"], halo_gals["gid"], return_indices=True
+        )
 
-    _, super_args, h_args = np.intersect1d(
-        super_cat["hid"], halos["hid"], return_indices=True
-    )
+        for key in super_cat.keys():
+            super_cat[key] = super_cat[key][super_args]
 
-    for key in super_cat.keys():
-        super_cat[key] = super_cat[key][super_args]
+        for key in halo_gals.keys():
+            if not key in super_cat.keys():
+                super_cat[key] = halo_gals[key][hg_args]
 
-    for key in halos.keys():
-        if not key in super_cat.keys():
-            super_cat[key] = halos[key][h_args]
+        # match halos and halo_gals
 
-    print("super cat keys are: ", super_cat.keys())
+        _, super_args, h_args = np.intersect1d(
+            super_cat["hid"], halos["hid"], return_indices=True
+        )
 
-    return super_cat
+        for key in super_cat.keys():
+            super_cat[key] = super_cat[key][super_args]
+
+        for key in halos.keys():
+            if not key in super_cat.keys():
+                super_cat[key] = halos[key][h_args]
+
+        print("super cat keys are: ", super_cat.keys())
+
+        if outf is not None:
+            with h5py.File(outf, "w") as f:
+                for key in super_cat.keys():
+                    f.create_dataset(key, data=super_cat[key])
+
+        return super_cat
