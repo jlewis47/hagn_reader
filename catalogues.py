@@ -66,9 +66,13 @@ def get_halos_cat(snap):
 
 def make_super_cat(snap, outf=None, overwrite=False):
 
+    fname = "super_cat_{snap}.h5"
+
     exists = False
     if outf is not None:
-        exists = os.path.exists(outf)
+        if not os.path.exists(outf):
+            os.makedirs(outf, exist_ok=True)
+        exists = os.path.exists(os.path.join(outf, fname))
 
     if exists and not overwrite:
         print(f"Super catalogue {outf} already exists")
@@ -125,7 +129,7 @@ def make_super_cat(snap, outf=None, overwrite=False):
         print("super cat keys are: ", super_cat.keys())
 
         if outf is not None:
-            with h5py.File(outf, "w") as f:
+            with h5py.File(os.path.join(outf, fname), "w") as f:
                 for key in super_cat.keys():
                     f.create_dataset(key, data=super_cat[key])
 
