@@ -16,6 +16,17 @@ def get_hagn_sim():
     )
 
 
+def get_nh_sim():
+
+    return ramses_sim(
+        "/data7c/NewHorizon",
+        nml="Things_for_restart/cosmo.nml",
+        info_path="INFO",
+        output_path="OUTPUT_DIR",
+        sink_path="/data7c/NewHorizon/SINKPROPS",
+    )
+
+
 def convert_hagn_star_units(stars: dict, snap, sim: ramses_sim):
 
     # sim = get_hagn_sim()

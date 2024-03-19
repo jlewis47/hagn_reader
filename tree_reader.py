@@ -8,10 +8,20 @@ from hagn.utils import adaptahop_to_code_units
 import h5py
 
 
-def map_tree_rev_steps_bytes(fname, out_path, star=False):
+def map_tree_rev_steps_bytes(fname, out_path, star=True, sim="hagn"):
+
+    assert sim in ["hagn", "nh"], "possible sims are 'hagn' or 'nh'"
 
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
+
+    float_dtype = np.float32
+    father_skip = 28  # hardcoded number depending on number of entries and dtype
+    if sim == "nh" and ("GAL" in fname or "gal" in fname):
+        float_dtype = np.float64
+        father_skip = 47
+
+    print(f"using float dtype: {float_dtype} and father skip: {father_skip}")
 
     # pass over whole tree and print list of byte numbers that correspond to the start of each step...
     with open(fname, "rb") as src:
@@ -22,13 +32,13 @@ def map_tree_rev_steps_bytes(fname, out_path, star=False):
         # print(read_record(src, 1, np.int32))
         nb_halos = read_record(src, nsteps * 2, np.int32, debug=False)
         nb_halos, nb_shalos = nb_halos[:nsteps], nb_halos[nsteps:]
-        tree_aexps = read_record(src, nsteps, np.float32)
-        # tree_omega_t = read_record(src, nsteps, np.float32)
-        # tree_age_univ = read_record(src, nsteps, np.float32)
-        skip_record(src, nsteps, np.float32)
-        skip_record(src, nsteps, np.float32)
+        tree_aexps = read_record(src, nsteps, float_dtype)
+        # tree_omega_t = read_record(src, nsteps, float_dtype)
+        # tree_age_univ = read_record(src, nsteps, float_dtype)
+        skip_record(src, nsteps, float_dtype)
+        skip_record(src, nsteps, float_dtype)
 
-        # print(nb_halos, nb_shalos, tree_aexps, tree_omega_t, tree_age_univ)
+        # print(nb_halos, nb_shalos, tree_aexps)  # , tree_omega_t, tree_age_univ)
 
         byte_positions = np.empty(nsteps, dtype=np.int64)
 
@@ -57,11 +67,14 @@ def map_tree_rev_steps_bytes(fname, out_path, star=False):
                 # skip_record(src, 27, dtype=np.int32)
                 # nb_fathers = read_record(src, 1, dtype=np.int32)
                 nbytes[iobj] = src.tell()
-                nb_fathers = np.fromfile(src, dtype=np.int32, count=28 + 13 * 2)
+                nb_fathers = np.fromfile(
+                    src, dtype=np.int32, count=father_skip + 13 * 2
+                )
+                # print(nb_fathers)
                 ids[iobj] = nb_fathers[1]
                 # print(ids[iobj])
                 nb_fathers = nb_fathers[-2]
-                # print(nb_fathers)
+                # print(ids[iobj], nb_fathers)
                 if nb_fathers > 0:
                     skip_record(src, nb_fathers, np.float32)
                     skip_record(src, nb_fathers, np.float32)
@@ -73,7 +86,7 @@ def map_tree_rev_steps_bytes(fname, out_path, star=False):
 
                 skip_record(src, 1, np.int32)
                 skip_record(src, 1, np.int32)
-                if star:
+                if star == False:
                     skip_record(src, 1, np.int32)
 
             with h5py.File(
@@ -93,17 +106,21 @@ def map_tree_rev_steps_bytes(fname, out_path, star=False):
                 )
 
 
-def istep_to_nbyte_rev(istep, tree_type="gal"):
+def istep_to_nbyte_rev(istep, tree_type="gal", sim="hagn"):
 
     fpath = f"/data101/jlewis/hagn/tree_offsets/{tree_type}/all_fine_rev"
+    if sim == "nh":
+        fpath = f"/data101/jlewis/hn/tree_offsets/{tree_type}/"
 
     with h5py.File(os.path.join(fpath, f"bytes_step_{istep:d}.h5"), "r") as src:
         return int(src["step_nbytes"][()])
 
 
-def iobj_to_nbyte_rev(istep, obj_id, tree_type="gal"):
+def iobj_to_nbyte_rev(istep, obj_id, tree_type="gal", sim="hagn"):
 
     fpath = f"/data101/jlewis/hagn/tree_offsets/{tree_type}/all_fine_rev"
+    if sim == "nh":
+        fpath = f"/data101/jlewis/hn/tree_offsets/{tree_type}/"
 
     with h5py.File(os.path.join(fpath, f"bytes_step_{istep:d}.h5"), "r") as src:
         # ids = src["obj_ids"][()]
@@ -111,7 +128,9 @@ def iobj_to_nbyte_rev(istep, obj_id, tree_type="gal"):
         return src["obj_nbytes"][obj_id - 1]
 
 
-def read_tree_rev(zstart: float, tgt_ids, tree_type="gal", target_fields=None):
+def read_tree_rev(
+    zstart: float, tgt_ids, tree_type="gal", target_fields=None, sim="hagn"
+):
     """
     zstart is the redshift at which to start the tree, code will start from closest avaialble step from tree
     tgt_ids is an iterable containing the ids of the objects to follow, starting at z=zstart
@@ -120,14 +139,26 @@ def read_tree_rev(zstart: float, tgt_ids, tree_type="gal", target_fields=None):
 
     assert tree_type in ["gal", "halo"], "possible types are 'gal' or 'halo'"
 
+    assert sim in ["hagn", "nh"], "possible sims are 'hagn' or 'nh'"
+
     # using the offset files to jump to the right byte position,
     # follow the main branch from zstart to the highest possible redshift
     # in the tree for all tgt_ids
 
-    if tree_type == "gal":
-        fname = "/data102/dubois/BigSimsCatalogs/H-AGN/MergerTree/TreeMaker_HAGN_allfinesteps/tree_rev.dat"  # path to the tree
-    else:
-        fname = "/data102/dubois/BigSimsCatalogs/H-AGN/MergerTreeHalo/HAGN/tree_rev.dat"
+    float_dtype = np.float32
+    if sim == "hagn":
+        if tree_type == "gal":
+            fname = "/data102/dubois/BigSimsCatalogs/H-AGN/MergerTree/TreeMaker_HAGN_allfinesteps/tree_rev.dat"  # path to the tree
+        else:
+            fname = (
+                "/data102/dubois/BigSimsCatalogs/H-AGN/MergerTreeHalo/HAGN/tree_rev.dat"
+            )
+    elif sim == "nh":
+        if tree_type == "gal":
+            float_dtype = np.float64
+            fname = "/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/MergerTrees/Halo/tree_rev.dat"  # path to the tree
+        else:
+            fname = "/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/MergerTrees/Gal/AdaptaHOP/tree_rev.dat"
 
     if target_fields is None:
         target_fields = ["m"]
@@ -138,9 +169,9 @@ def read_tree_rev(zstart: float, tgt_ids, tree_type="gal", target_fields=None):
 
         nb_halos = read_record(src, nsteps * 2, np.int32, debug=False)
         nb_halos, nb_shalos = nb_halos[:nsteps], nb_halos[nsteps:]
-        tree_aexps = read_record(src, nsteps, np.float32)
-        skip_record(src, nsteps, np.float32)
-        skip_record(src, nsteps, np.float32)
+        tree_aexps = read_record(src, nsteps, float_dtype)
+        skip_record(src, nsteps, float_dtype)
+        skip_record(src, nsteps, float_dtype)
 
         skip = np.argmin(np.abs(tree_aexps - (1.0 / (1.0 + zstart))))
 
@@ -156,12 +187,12 @@ def read_tree_rev(zstart: float, tgt_ids, tree_type="gal", target_fields=None):
 
         for istep in range(skip, nsteps):
 
-            nyte_skip = istep_to_nbyte_rev(istep, tree_type=tree_type)
+            nyte_skip = istep_to_nbyte_rev(istep, tree_type=tree_type, sim=sim)
             src.seek(
                 nyte_skip
             )  # no difference to perf if use byte position from start vs relative position from current position
 
-            print(f"step {istep}, z={1.0 / tree_aexps[istep] - 1.0:.4f}")
+            # print(f"step {istep}, z={1.0 / tree_aexps[istep] - 1.0:.4f}")
 
             if istep > skip and np.all(found_ids[:, istep - skip - 1] == -1):
                 print("stopping tree... no fathers found in previous step")
@@ -170,7 +201,7 @@ def read_tree_rev(zstart: float, tgt_ids, tree_type="gal", target_fields=None):
             # for iobj in np.sort(found_ids[:, istep - skip]):
             for iobj in found_ids[:, istep - skip]:
 
-                obj_bytes = iobj_to_nbyte_rev(istep, iobj, tree_type=tree_type)
+                obj_bytes = iobj_to_nbyte_rev(istep, iobj, tree_type=tree_type, sim=sim)
 
                 src.seek(obj_bytes)
 
@@ -183,15 +214,15 @@ def read_tree_rev(zstart: float, tgt_ids, tree_type="gal", target_fields=None):
 
                 # np.fromfile(src, dtype=np.int32, count=7 + 3 * 2)
 
-                m = read_record(src, 1, np.float32)
+                m = read_record(src, 1, float_dtype)
 
-                macc = read_record(src, 1, np.float32)
-                px, py, pz = read_record(src, 3, np.float32)
-                vx, vy, vz = read_record(src, 3, np.float32)
-                Lx, Ly, Lz = read_record(src, 3, np.float32)
-                r, ra, rb, rc = read_record(src, 4, np.float32)
-                ek, ep, et = read_record(src, 3, np.float32)
-                spin = read_record(src, 1, np.float32)
+                macc = read_record(src, 1, float_dtype)
+                px, py, pz = read_record(src, 3, float_dtype)
+                vx, vy, vz = read_record(src, 3, float_dtype)
+                Lx, Ly, Lz = read_record(src, 3, float_dtype)
+                r, ra, rb, rc = read_record(src, 4, float_dtype)
+                ek, ep, et = read_record(src, 3, float_dtype)
+                spin = read_record(src, 1, float_dtype)
                 #
                 nb_fathers = read_record(src, 1, np.int32)
                 # print(nb_fathers)

@@ -79,7 +79,7 @@ def make_super_cat(snap, outf=None, overwrite=False):
         exists = os.path.exists(os.path.join(outf, fname))
 
     if exists and not overwrite:
-        print(f"Super catalogue {outf} already exists")
+        print(f"Super catalogue {fname} already exists at given location.")
         # read
         with h5py.File(os.path.join(outf, fname), "r") as f:
             return {key: f[key][...] for key in f.keys()}
@@ -133,7 +133,7 @@ def make_super_cat(snap, outf=None, overwrite=False):
         print("super cat keys are: ", super_cat.keys())
 
         if outf is not None:
-            super_cat = convert_cat_units(super_cat, sim, snap)
+            # super_cat = convert_cat_units(super_cat, sim, snap)
             with h5py.File(os.path.join(outf, fname), "w") as f:
                 for key in super_cat.keys():
                     f.create_dataset(key, data=super_cat[key])
@@ -156,6 +156,10 @@ def convert_cat_units(cat, sim: ramses_sim, snap):
     aexp = sim.get_snap_exps(snap)
 
     l_sim = sim.cosmo["unit_l"] / 3.08e24 / sim.aexp_stt * aexp  # pMpc
+
+    print(cat["x"])
+    print(cat["hx"])
+    print(cat["rvir"])
 
     for pk in ["x", "y", "z", "hx", "hy", "hz"]:
         cat[pk] += l_sim * 0.5
