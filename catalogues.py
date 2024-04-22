@@ -3,7 +3,8 @@ from f90_tools.IO import read_record
 import numpy as np
 import h5py
 from gremlin.read_sim_params import ramses_sim
-from hagn.utils import get_hagn_sim
+
+# from hagn.utils import get_hagn_sim
 
 
 def array_dict(datas):
@@ -12,9 +13,6 @@ def array_dict(datas):
         d[k] = datas[k]
 
     return d
-
-
-gal_dir = "/data33/dubois/H-AGN/Catalogs/Gal"
 
 
 def read_sfrgal_bin(fname):
@@ -34,31 +32,56 @@ def read_sfrgal_bin(fname):
     return d
 
 
-def get_galsfr_cat(snap):
-    sfrgal_fname = os.path.join(gal_dir, f"list_sfrgal_{snap:05d}.dat")
+def get_galsfr_cat(snap, sim="hagn"):
+    assert sim in ["hagn", "nh"]
+    if sim == "hagn":
+        cat_dir = "/data33/dubois/H-AGN/Catalogs/Gal"
+    else:
+        cat_dir = "/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/SFR/AdaptaHOP"
+    sfrgal_fname = os.path.join(cat_dir, f"list_sfrgal_{snap:05d}.dat")
     return read_sfrgal_bin(sfrgal_fname)
 
 
-def get_gals_cat(snap):
-    gal_fname = os.path.join(gal_dir, f"list_gal_{snap:05d}.dat")
+def get_gals_cat(snap, sim="hagn"):
+    assert sim in ["hagn", "nh"]
+    if sim == "hagn":
+        cat_dir = "/data33/dubois/H-AGN/Catalogs/Gal"
+        suff = ""
+    else:
+        cat_dir = "/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/Gal/AdaptaHOP/100PerCentPurity"
+        suff = "_nocontam"
+    gal_fname = os.path.join(cat_dir, f"list_gal_{snap:05d}.dat" + suff)
     datas = np.genfromtxt(
         gal_fname, names=["gid", "lvl", "mgal", "x", "y", "z", "rgal"]
     )
     return array_dict(datas)
 
 
-def get_halogals_cat(snap):
-    halogal_fname = os.path.join(
-        gal_dir.replace("Gal", "HaloGal"), f"halogal_{snap:05d}.dat"
-    )
+def get_halogals_cat(snap, sim="hagn"):
+    assert sim in ["hagn", "nh"]
+    if sim == "hagn":
+        cat_dir = "/data33/dubois/H-AGN/Catalogs/HaloGal"
+        suff = ""
+    else:
+        cat_dir = "/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/HaloGal/AdaptaHOP/100PerCentPurity"
+        suff = "_nocontam"
+    halogal_fname = os.path.join(cat_dir, f"halogal_{snap:05d}.dat" + suff)
     datas = np.genfromtxt(halogal_fname, names=["hid", "host", "mhalo", "gid", "mgal"])
     return array_dict(datas)
 
 
-def get_halos_cat(snap):
-    halo_fname = os.path.join(
-        gal_dir.replace("Gal", "Halo"), f"list_halo_{snap:05d}.dat"
-    )
+def get_halos_cat(snap, sim="hagn"):
+    assert sim in ["hagn", "nh"]
+    if sim == "hagn":
+        cat_dir = "/data33/dubois/H-AGN/Catalogs/Halo"
+        suff = ""
+    else:
+        cat_dir = (
+            "/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/Halo/100PerCentPurity"
+        )
+        suff = "_nocontam"
+
+    halo_fname = os.path.join(cat_dir, f"list_halo_{snap:05d}.dat" + suff)
 
     datas = np.genfromtxt(
         halo_fname, names=["hid", "host", "mhalo", "hx", "hy", "hz", "rvir"]
@@ -66,9 +89,9 @@ def get_halos_cat(snap):
     return array_dict(datas)
 
 
-def make_super_cat(snap, outf=None, overwrite=False):
+def make_super_cat(snap, sim="hagn", outf=None, overwrite=False):
 
-    sim = get_hagn_sim()
+    assert sim in ["hagn", "nh"]
 
     fname = f"super_cat_{snap}.h5"
 
@@ -86,10 +109,10 @@ def make_super_cat(snap, outf=None, overwrite=False):
 
     else:
 
-        halos = get_halos_cat(snap)
-        halo_gals = get_halogals_cat(snap)
-        gals = get_gals_cat(snap)
-        galsfrs = get_galsfr_cat(snap)
+        halos = get_halos_cat(snap, sim=sim)
+        halo_gals = get_halogals_cat(snap, sim=sim)
+        gals = get_gals_cat(snap, sim=sim)
+        galsfrs = get_galsfr_cat(snap, sim=sim)
 
         # match gal ids in gals and gals_sfrs
 
@@ -157,13 +180,46 @@ def convert_cat_units(cat, sim: ramses_sim, snap):
 
     l_sim = sim.cosmo["unit_l"] / 3.08e24 / sim.aexp_stt * aexp  # pMpc
 
-    print(cat["x"])
-    print(cat["hx"])
-    print(cat["rvir"])
+    # print(cat["x"])
+    # print(cat["hx"])
+    # print(cat["rvir"])
 
-    for pk in ["x", "y", "z", "hx", "hy", "hz"]:
+    for pk in ["x", "y", "z", "hx", "hy", "hz", "pos"]:
         cat[pk] += l_sim * 0.5
-    for k in ["x", "y", "z", "hx", "hy", "hz", "rvir", "rgal"]:
-        cat[pk] /= l_sim
+    for k in ["x", "y", "z", "hx", "hy", "hz", "pos", "rvir", "rgal", "rad", "r"]:
+        cat[k] /= l_sim
+
+    if "m" in cat.keys():
+        cat["m"] *= 1e11
+
+    return cat
+
+
+def get_nh_cats_h5(snap, sort="adaptahop"):
+
+    assert sort in ["adaptahop", "hop"]
+
+    if sort == "adaptahop":
+        p = os.path.join(f"/data74/cadiou/NewH-catalogs/galaxies-{snap:03d}_dp.h5")
+    else:
+        p = os.path.join(f"/data74/cadiou/NewH-catalogs/galaxies-{snap:03d}_dp_HOP.h5")
+
+    if not os.path.exists(p):
+        print("Catalogue not found for given snapshot.")
+        return None
+
+    cat = {}
+
+    with h5py.File(p, "r") as f:
+
+        ks = list(f.keys())
+
+        for k in ks:
+
+            if not hasattr(f[k], "keys"):
+                cat[ks] = f[ks]
+            else:
+                for kk in f[k].keys():
+                    cat[kk] = f[k][kk][...]
 
     return cat

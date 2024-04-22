@@ -11,6 +11,49 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 
+def read_hagn_sink_bin(fname, tgt_fields=None, debug=False):
+
+    data = {}
+
+    fields = [
+        ("identity", 1, "i4"),
+        ("mass", 1, "f8"),
+        ("position", 3, "f8"),
+        ("velocity", 3, "f8"),
+        ("birth_time", 1, "f8"),
+        ("dMsmbh", 1, "f8"),
+        ("dMBH_coarse", 1, "f8"),
+        ("dMEd_coarse", 1, "f8"),
+        ("Esave", 1, "f8"),
+        ("jsinks", 3, "f8"),
+        ("spins", 1, "f8"),
+        ("spin_magnitude", 1, "f8"),
+        # ("eps_sink", 1, "f8"),
+    ]
+
+    if tgt_fields is None:
+        tgt_fields = fields
+
+    with open(fname, "rb") as src:
+
+        data["nsink"] = read_record(src, 1, np.int32)
+        data["ndim"] = read_record(src, 1, np.int32)
+        data["aexp"] = read_record(src, 1, np.float64)
+        data["unit_l"] = read_record(src, 1, np.float64)
+        data["unit_d"] = read_record(src, 1, np.float64)
+        data["unit_t"] = read_record(src, 1, np.float64)
+
+        if debug:
+            print(data["nsink"], data["ndim"])
+            print(data["aexp"], data["unit_l"], data["unit_d"], data["unit_t"])
+
+        if tgt_fields != []:
+
+            read_tgt_fields(data, tgt_fields, fields, src, data["nsink"], debug=debug)
+
+    return data
+
+
 def read_hagn_star(fname: str, tgt_pos=None, tgt_r=None, tgt_fields: list = None):
 
     names = [
@@ -440,6 +483,168 @@ def get_hagn_brickfile_stpids(fname, tgt_gid, sim: ramses_sim, star=True):
             # read_record(src, 2, np.float32)
 
     return [], -1, []  # didn't find anything return
+
+
+def get_hagn_brickfile_ids(fname, ids, star=True):
+    """
+    read brickfile but skip non requested ids
+    """
+
+    out = {}
+
+    l = len(ids)
+    found = 0
+
+    out["gid"] = np.empty(l, dtype=np.int32)
+    out["tstep"] = np.empty(l, dtype=np.float32)
+    out["hlvl"] = np.empty(l, dtype=np.int32)
+    out["hosth"] = np.empty(l, dtype=np.int32)
+    out["hostsub"] = np.empty(l, dtype=np.int32)
+    out["nbsub"] = np.empty(l, dtype=np.int32)
+    out["nextsub"] = np.empty(l, dtype=np.int32)
+    out["hmass"] = np.empty(l, dtype=np.float64)
+    out["pos"] = np.empty((l, 3), dtype=np.float32)
+    out["vel"] = np.empty((l, 3), dtype=np.float32)
+    out["AngMom"] = np.empty((l, 3), dtype=np.float32)
+    out["ellipse"] = np.empty((l, 4), dtype=np.float32)
+    out["Ek"] = np.empty(l, dtype=np.float32)
+    out["Ep"] = np.empty(l, dtype=np.float32)
+    out["Et"] = np.empty(l, dtype=np.float32)
+    out["spin"] = np.empty(l, dtype=np.float32)
+    out["sigma"] = np.empty(l, dtype=np.float32)
+    out["sigma_bulge"] = np.empty(l, dtype=np.float32)
+    out["m_bulge"] = np.empty(l, dtype=np.float32)
+    out["rvir"] = np.empty(l, dtype=np.float32)
+    out["mvir"] = np.empty(l, dtype=np.float64)
+    out["tvir"] = np.empty(l, dtype=np.float32)
+    out["cvel"] = np.empty(l, dtype=np.float32)
+    out["rho0"] = np.empty(l, dtype=np.float32)
+    out["r_c"] = np.empty(l, dtype=np.float32)
+
+    if star:
+        out["nbin"] = np.empty(l, dtype=np.int32)
+        out["rr"] = np.empty((l, 100), dtype=np.float32)
+        out["rho"] = np.empty((l, 100), dtype=np.float32)
+
+    with open(fname, "rb") as src:
+        read_record(src, 1, np.int32)
+        read_record(src, 1, np.float32)
+        aexp = read_record(src, 1, np.float32)
+        read_record(src, 1, np.float32)
+        read_record(src, 1, np.float32)
+        nh, nsub = read_record(src, 2, np.int32)
+        nb_structs = nh + nsub
+
+        for istrct in range(nb_structs):
+            num_parts = read_record(src, 1, np.int32)
+
+            # Discard particle IDs
+            read_record(src, num_parts, np.int32)
+            # pids = read_record(src, num_parts, np.int32)
+
+            gid = read_record(src, 1, np.int32)
+
+            # print(gid)
+
+            if gid in ids:
+
+                id_arg = np.where(ids == gid)[0][0]
+                out["gid"][id_arg] = gid
+
+                tstep = read_record(src, 1, np.float32)
+                out["tstep"][id_arg] = tstep
+
+                (
+                    hlvl,
+                    hosth,
+                    hostsub,
+                    nbsub,
+                    nextsub,
+                ) = read_record(src, 5, np.int32)
+                out["hlvl"][id_arg] = hlvl
+                out["hosth"][id_arg] = hosth
+                out["hostsub"][id_arg] = hostsub
+                out["nbsub"][id_arg] = nbsub
+                out["nextsub"][id_arg] = nextsub
+
+                hmass = read_record(src, 1, np.float32)
+                out["hmass"][id_arg] = hmass
+
+                pos = read_record(src, 3, np.float32)
+                out["pos"][id_arg] = pos
+
+                vel = read_record(src, 3, np.float32)
+                out["vel"][id_arg] = vel
+
+                AngMom = read_record(src, 3, np.float32)
+                out["AngMom"][id_arg] = AngMom
+
+                ellipse = read_record(src, 4, np.float32)
+                out["ellipse"][id_arg] = ellipse
+
+                Ek, Ep, Et = read_record(src, 3, np.float32)
+                out["Ek"][id_arg] = Ek
+                out["Ep"][id_arg] = Ep
+                out["Et"][id_arg] = Et
+
+                spin = read_record(src, 1, np.float32)
+                out["spin"][id_arg] = spin
+
+                sigma, sigma_bulge, m_bulge = read_record(src, 3, np.float32)  # skip
+                out["sigma"][id_arg] = sigma
+                out["sigma_bulge"][id_arg] = sigma_bulge
+                out["m_bulge"][id_arg] = m_bulge
+
+                rvir, mvir, tvir, cvel = read_record(src, 4, np.float32)
+                out["rvir"][id_arg] = rvir
+                out["mvir"][id_arg] = mvir
+                out["tvir"][id_arg] = tvir
+                out["cvel"][id_arg] = cvel
+
+                rho0, r_c = read_record(src, 2, np.float32)
+                out["rho0"][id_arg] = rho0
+                out["r_c"][id_arg] = r_c
+
+                if star:
+                    nbin = read_record(src, 1, np.int32)
+                    rr = read_record(src, 100, np.float32)
+                    rho = read_record(src, 100, np.float32)
+                    out["nbin"][id_arg] = nbin
+                    out["rr"][id_arg] = rr
+                    out["rho"][id_arg] = rho
+
+                found += 1
+
+                if found == l:
+                    break
+
+            else:
+
+                # 3 * 4 * 2 + 7 * 4, 1
+                # 1 * 4 * 2 + 3 * 4, 1
+                # 6 * 4 * 2 + 17 * 4, 1
+                # 1 * 4 * 2 + 4 * 4, 1
+                # 1 * 4 * 2 + 2 * 4, 1
+                src.seek(228, 1)
+
+                if star:
+                    # 3 * 4 * 2 + 201 * 4
+                    src.seek(828, 1)
+
+            # read_record(src, 2, np.float32)
+
+    return out  # didn't find anything return
+
+
+def get_hagn_brickfile_aexp(fname):
+    """ """
+
+    with open(fname, "rb") as src:
+        read_record(src, 1, np.int32)
+        read_record(src, 1, np.float32)
+        aexp = read_record(src, 1, np.float32)
+
+    return aexp
 
 
 def read_hagn_snap_brickfile(snap, sim):

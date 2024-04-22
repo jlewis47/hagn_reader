@@ -7,20 +7,34 @@ import numpy as np
 
 def get_hagn_sim():
 
-    return ramses_sim(
+    sim = ramses_sim(
         "/data52/Horizon-AGN",
         nml="things_for_restart/cosmo.nml",
         info_path="INFO",
         output_path="OUTPUT_DIR",
         sink_path="/data40a/Horizon-AGN/SINK_PROPS",
+        param_save=False,
     )
+
+    hydro = {
+        "1": "density",
+        "2": "velocity_x",
+        "3": "velocity_y",
+        "4": "velocity_z",
+        "5": "pressure",
+        "6": "metallicity",
+    }
+
+    sim.hydro = hydro
+
+    return sim
 
 
 def get_nh_sim():
 
     return ramses_sim(
         "/data7c/NewHorizon",
-        nml="Things_for_restart/cosmo.nml",
+        nml="Things_For_Restart/cosmo.nml",
         info_path="INFO",
         output_path="OUTPUT_DIR",
         sink_path="/data7c/NewHorizon/SINKPROPS",
@@ -56,18 +70,18 @@ def convert_hagn_star_units(stars: dict, snap, sim: ramses_sim):
         stars["mass"] *= unit_m
 
     if "birth_time" in stars:
-        fried_path = os.path.join(
-            os.path.dirname(__file__), "freidmann/"
-        )  # create friedmann files
-        # in module's directory
-        if not os.path.isdir(fried_path):
-            os.makedirs(fried_path, exist_ok=True)
+        # fried_path = os.path.join(
+        #     os.path.dirname(__file__), "friedmann/"
+        # )  # create friedmann files
+        # # in module's directory
+        # if not os.path.isdir(fried_path):
+        #     os.makedirs(fried_path, exist_ok=True)
 
         stars["age"] = convert_star_time(
             stars["birth_time"],
             sim,
             aexp,
-            cosmo_fname=os.path.join(fried_path, str(snap) + ".txt"),
+            # cosmo_fname=os.path.join(fried_path, "friedman" + ".txt"),
         )
 
         del stars["birth_time"]
@@ -98,6 +112,6 @@ def hagn_z_to_snap(z):
 
 def adaptahop_to_code_units(x, aexp, sim: ramses_sim):
 
-    box_len = sim.cosmo["unit_l"] / 3.086e24 / sim.aexp_stt * aexp
+    box_len = sim.cosmo["unit_l"] / 3.08e24 / sim.aexp_stt * aexp
 
     return x / box_len + 0.5

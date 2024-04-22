@@ -1,27 +1,38 @@
+from importlib.util import spec_from_file_location
 import numpy as np
 import os
 
 from f90_tools.IO import read_record, skip_record
 
-from hagn.utils import adaptahop_to_code_units
+from hagn.utils import adaptahop_to_code_units, get_hagn_sim
+from hagn.io import get_hagn_brickfile_aexp, get_hagn_brickfile_ids
+from hagn.association import gid_to_stars
 
 import h5py
 
 
-def map_tree_rev_steps_bytes(fname, out_path, star=True, sim="hagn"):
+# from zoom_analysis.halo_maker.read_treebricks import (
+#     convert_brick_units,
+# )
+
+
+def map_tree_steps_bytes(fname, out_path, star=True, sim="hagn", debug=False):
 
     assert sim in ["hagn", "nh"], "possible sims are 'hagn' or 'nh'"
+    # assert direction in ["rev", "fwd"], "possible directions are 'rev' or 'fwd'"
 
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
 
     float_dtype = np.float32
-    father_skip = 28  # hardcoded number depending on number of entries and dtype
+    # father_skip = (
+    #     28  # hardcoded number of bytes depending on number of entries and dtype
+    # ) #maybe perf gain... but makes things more complex for little reason.
     if sim == "nh" and ("GAL" in fname or "gal" in fname):
         float_dtype = np.float64
-        father_skip = 47
+        # father_skip = 47
 
-    print(f"using float dtype: {float_dtype} and father skip: {father_skip}")
+    print(f"using float dtype: {float_dtype}")  # and father skip: {father_skip}")
 
     # pass over whole tree and print list of byte numbers that correspond to the start of each step...
     with open(fname, "rb") as src:
@@ -30,13 +41,13 @@ def map_tree_rev_steps_bytes(fname, out_path, star=True, sim="hagn"):
         # print(nsteps)
         # print(read_record(src, 1, np.int32))
         # print(read_record(src, 1, np.int32))
-        nb_halos = read_record(src, nsteps * 2, np.int32, debug=False)
+        nb_halos = read_record(src, nsteps * 2, np.int32, debug=debug)
         nb_halos, nb_shalos = nb_halos[:nsteps], nb_halos[nsteps:]
         tree_aexps = read_record(src, nsteps, float_dtype)
         # tree_omega_t = read_record(src, nsteps, float_dtype)
         # tree_age_univ = read_record(src, nsteps, float_dtype)
-        skip_record(src, nsteps, float_dtype)
-        skip_record(src, nsteps, float_dtype)
+        skip_record(src, 1)
+        skip_record(src, 1)
 
         # print(nb_halos, nb_shalos, tree_aexps)  # , tree_omega_t, tree_age_univ)
 
@@ -46,7 +57,7 @@ def map_tree_rev_steps_bytes(fname, out_path, star=True, sim="hagn"):
 
             ntot = nb_halos[istep] + nb_shalos[istep]
 
-            # print(ntot)
+            #  print(ntot)
 
             ids = np.empty(ntot, dtype=np.int32)
             nbytes = np.empty(ntot, dtype=np.int64)
@@ -66,28 +77,35 @@ def map_tree_rev_steps_bytes(fname, out_path, star=True, sim="hagn"):
 
                 # skip_record(src, 27, dtype=np.int32)
                 # nb_fathers = read_record(src, 1, dtype=np.int32)
-                nbytes[iobj] = src.tell()
-                nb_fathers = np.fromfile(
-                    src, dtype=np.int32, count=father_skip + 13 * 2
-                )
+                # nbytes[iobj] = src.tell()
+                # nb_fathers = np.fromfile(
+                #     src, dtype=np.int32, count=father_skip + 13 * 2
+                # )
+                # ids[iobj] = nb_fathers[1]
                 # print(nb_fathers)
-                ids[iobj] = nb_fathers[1]
                 # print(ids[iobj])
-                nb_fathers = nb_fathers[-2]
+                # nb_fathers = nb_fathers[-2]
+                # print(nb_fathers)
+
+                ids[iobj] = read_record(src, 1, np.int32)
+                skip_record(src, 11)
+                nb_fathers = read_record(src, 1, np.int32)
+
                 # print(ids[iobj], nb_fathers)
                 if nb_fathers > 0:
-                    skip_record(src, nb_fathers, np.float32)
-                    skip_record(src, nb_fathers, np.float32)
+                    skip_record(src, 1)
+                    skip_record(src, 1)
 
                 nb_sons = read_record(src, 1, np.int32)
+                # print(nb_sons)
 
                 if nb_sons > 0:
-                    skip_record(src, nb_sons, np.float32)
+                    skip_record(src, 1)
 
-                skip_record(src, 1, np.int32)
-                skip_record(src, 1, np.int32)
+                skip_record(src, 1)
+                skip_record(src, 1)
                 if star == False:
-                    skip_record(src, 1, np.int32)
+                    skip_record(src, 1)
 
             with h5py.File(
                 os.path.join(out_path, f"bytes_step_{istep:d}.h5"), "w"
@@ -106,21 +124,21 @@ def map_tree_rev_steps_bytes(fname, out_path, star=True, sim="hagn"):
                 )
 
 
-def istep_to_nbyte_rev(istep, tree_type="gal", sim="hagn"):
+def istep_to_nbyte(istep, tree_type="gal", sim="hagn", direction="rev"):
 
-    fpath = f"/data101/jlewis/hagn/tree_offsets/{tree_type}/all_fine_rev"
+    fpath = f"/data101/jlewis/hagn/tree_offsets/{tree_type}/all_fine_{direction:s}"
     if sim == "nh":
-        fpath = f"/data101/jlewis/hn/tree_offsets/{tree_type}/"
+        fpath = f"/data101/jlewis/hn/tree_offsets/{tree_type}/{direction:s}"
 
     with h5py.File(os.path.join(fpath, f"bytes_step_{istep:d}.h5"), "r") as src:
         return int(src["step_nbytes"][()])
 
 
-def iobj_to_nbyte_rev(istep, obj_id, tree_type="gal", sim="hagn"):
+def iobj_to_nbyte(istep, obj_id, tree_type="gal", sim="hagn", direction="rev"):
 
-    fpath = f"/data101/jlewis/hagn/tree_offsets/{tree_type}/all_fine_rev"
+    fpath = f"/data101/jlewis/hagn/tree_offsets/{tree_type}/all_fine_{direction:s}"
     if sim == "nh":
-        fpath = f"/data101/jlewis/hn/tree_offsets/{tree_type}/"
+        fpath = f"/data101/jlewis/hn/tree_offsets/{tree_type}/{direction:s}"
 
     with h5py.File(os.path.join(fpath, f"bytes_step_{istep:d}.h5"), "r") as src:
         # ids = src["obj_ids"][()]
@@ -128,8 +146,13 @@ def iobj_to_nbyte_rev(istep, obj_id, tree_type="gal", sim="hagn"):
         return src["obj_nbytes"][obj_id - 1]
 
 
-def read_tree_rev(
-    zstart: float, tgt_ids, tree_type="gal", target_fields=None, sim="hagn"
+def read_tree(
+    zstart: float,
+    tgt_ids,
+    tree_type="gal",
+    target_fields=None,
+    sim="hagn",
+    direction="rev",
 ):
     """
     zstart is the redshift at which to start the tree, code will start from closest avaialble step from tree
@@ -145,20 +168,25 @@ def read_tree_rev(
     # follow the main branch from zstart to the highest possible redshift
     # in the tree for all tgt_ids
 
+    if direction == "fwd":
+        tree_name = "tree.dat"
+    elif direction == "rev":
+        tree_name = "tree_rev.dat"
+    else:
+        raise ValueError("direction must be 'fwd' or 'rev'")
+
     float_dtype = np.float32
     if sim == "hagn":
         if tree_type == "gal":
-            fname = "/data102/dubois/BigSimsCatalogs/H-AGN/MergerTree/TreeMaker_HAGN_allfinesteps/tree_rev.dat"  # path to the tree
+            fname = f"/data102/dubois/BigSimsCatalogs/H-AGN/MergerTree/TreeMaker_HAGN_allfinesteps/{tree_name:s}"  # path to the tree
         else:
-            fname = (
-                "/data102/dubois/BigSimsCatalogs/H-AGN/MergerTreeHalo/HAGN/tree_rev.dat"
-            )
+            fname = f"/data102/dubois/BigSimsCatalogs/H-AGN/MergerTreeHalo/HAGN/{tree_name:s}"
     elif sim == "nh":
         if tree_type == "gal":
             float_dtype = np.float64
-            fname = "/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/MergerTrees/Halo/tree_rev.dat"  # path to the tree
+            fname = f"/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/MergerTrees/Halo/{tree_name:s}"  # path to the tree
         else:
-            fname = "/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/MergerTrees/Gal/AdaptaHOP/tree_rev.dat"
+            fname = f"/data102/dubois/BigSimsCatalogs/NewHorizon/Catalogs/MergerTrees/Gal/AdaptaHOP/{tree_name:s}"
 
     if target_fields is None:
         target_fields = ["m"]
@@ -170,8 +198,8 @@ def read_tree_rev(
         nb_halos = read_record(src, nsteps * 2, np.int32, debug=False)
         nb_halos, nb_shalos = nb_halos[:nsteps], nb_halos[nsteps:]
         tree_aexps = read_record(src, nsteps, float_dtype)
-        skip_record(src, nsteps, float_dtype)
-        skip_record(src, nsteps, float_dtype)
+        skip_record(src, 1)
+        skip_record(src, 1)
 
         skip = np.argmin(np.abs(tree_aexps - (1.0 / (1.0 + zstart))))
 
@@ -187,7 +215,7 @@ def read_tree_rev(
 
         for istep in range(skip, nsteps):
 
-            nyte_skip = istep_to_nbyte_rev(istep, tree_type=tree_type, sim=sim)
+            nyte_skip = istep_to_nbyte(istep, tree_type=tree_type, sim=sim)
             src.seek(
                 nyte_skip
             )  # no difference to perf if use byte position from start vs relative position from current position
@@ -201,7 +229,7 @@ def read_tree_rev(
             # for iobj in np.sort(found_ids[:, istep - skip]):
             for iobj in found_ids[:, istep - skip]:
 
-                obj_bytes = iobj_to_nbyte_rev(istep, iobj, tree_type=tree_type, sim=sim)
+                obj_bytes = iobj_to_nbyte(istep, iobj, tree_type=tree_type, sim=sim)
 
                 src.seek(obj_bytes)
 
@@ -216,7 +244,12 @@ def read_tree_rev(
 
                 m = read_record(src, 1, float_dtype)
 
-                macc = read_record(src, 1, float_dtype)
+                if direction == "fwd" and sim == "hagn" and tree_type == "gal":
+                    macc = read_record(
+                        src, 1, np.float64
+                    )  # for some reason we need this...
+                else:
+                    macc = read_record(src, 1, float_dtype)
                 px, py, pz = read_record(src, 3, float_dtype)
                 vx, vy, vz = read_record(src, 3, float_dtype)
                 Lx, Ly, Lz = read_record(src, 3, float_dtype)
@@ -293,6 +326,11 @@ def read_tree_rev(
 
                             main_id = id_fathers
 
+                        if "m_father" in target_fields:
+                            found_fields["m_father"][found_arg, istep - skip] = (
+                                m_fathers[massive_father]
+                            )
+
                         if istep < nsteps - 1:
                             found_ids[found_arg, istep - skip + 1] = main_id
 
@@ -303,3 +341,131 @@ def read_tree_rev(
 #     "/data102/dubois/BigSimsCatalogs/H-AGN/MergerTree/TreeMaker_HAGN_allfinesteps/tree_rev.dat",
 #     "/data101/jlewis/hagn/tree_offsets/all_fine_rev/",
 # )
+
+
+def follow_treebricks(aexp_stt, aexp_end, brick_dir, tree_aexps, ids, fields=None):
+    """
+    ids needs to be 2D : (n galaxies, n tree steps)
+    """
+
+    hagn_sim = get_hagn_sim()
+
+    if fields is None:
+        return {}
+
+    brick_files = [f for f in os.listdir(brick_dir) if "tree_bricks" in f]
+    brick_fnames = np.asarray([os.path.join(brick_dir, brick) for brick in brick_files])
+
+    brick_numbers = np.asarray([int(brick[-3:]) for brick in brick_files])
+
+    brick_fnames = brick_fnames[np.argsort(brick_numbers)]
+    brick_aexps = np.asarray([get_hagn_brickfile_aexp(brick) for brick in brick_fnames])
+
+    in_range = (brick_aexps <= aexp_stt) & (brick_aexps >= aexp_end)
+
+    # print(brick_aexps[in_range])
+    # print(1.0 / brick_aexps[in_range] - 1)
+
+    print(f"Found {np.sum(in_range)} bricks in range")
+
+    found_fields = {}
+    # brick_aexps = np.zeros(len(brick_files))
+    for tgt_f in fields:
+        found_fields[tgt_f] = np.full(
+            (len(ids), len(brick_aexps)), -1, dtype=np.float32
+        )
+
+    for ibrick, brick in enumerate(brick_fnames[in_range]):
+
+        # brick_num = int(brick.split("_")[-1].split(".")[0])
+
+        print(ibrick, brick)
+
+        # closest tree step
+        closest_step = np.argmin(np.abs(tree_aexps - brick_aexps[ibrick]))
+        # print(np.shape(ids), closest_step)
+        closest_ids = ids[:, closest_step]
+
+        brick_data = get_hagn_brickfile_ids(brick, closest_ids, star=True)
+
+        # print(brick_data["hmass"])
+        # print(brick_data["pos"])
+
+        # print(closest_ids, brick_data["hosting info"]["hid"])
+
+        # print(np.in1d(closest_ids, brick_data["hosting info"]["hid"]))
+
+        # args = np.where(brick_data["hosting info"]["hid"] == closest_ids[:, None])[1]
+
+        # print(args)
+
+        for f in brick_data.keys():
+            if f in fields:
+                found_fields[f][:, ibrick] = brick_data[f]
+                # print(f, brick_data[f], found_fields[f][:, ibrick])
+
+    box_len = (
+        hagn_sim.cosmo["unit_l"] / 3.08e24 / hagn_sim.aexp_stt * brick_aexps[ibrick]
+    )  # / h / aexp  # * aexp  # proper Mpc
+
+    if "hmass" in brick_data.keys():
+        brick_data["hmass"] *= 1e11
+    if "mvir" in brick_data.keys():
+        brick_data["mvir"] *= 1e11
+
+    if "pos" in brick_data.keys():
+        brick_data["pos"] /= box_len
+        brick_data["pos"] += 0.5
+
+    return found_fields, brick_aexps
+
+
+def follow_treebricks_sfr(aexp_stt, aexp_end, brick_dir, tree_aexps, ids):
+    """
+    ids needs to be 2D : (n galaxies, n tree steps)
+    """
+
+    hagn_sim = get_hagn_sim()
+
+    hagn_aexps = hagn_sim.aexps
+    hagn_snaps = hagn_sim.snaps
+
+    brick_files = [f for f in os.listdir(brick_dir) if "tree_bricks" in f]
+    brick_fnames = np.asarray([os.path.join(brick_dir, brick) for brick in brick_files])
+
+    brick_numbers = np.asarray([int(brick[-3:]) for brick in brick_files])
+
+    brick_fnames = brick_fnames[np.argsort(brick_numbers)]
+    brick_aexps = np.asarray([get_hagn_brickfile_aexp(brick) for brick in brick_fnames])
+
+    in_range = (brick_aexps <= aexp_stt) & (brick_aexps >= aexp_end)
+
+    print(f"Found {np.sum(in_range)} bricks in range")
+
+    mstar = np.zeros((len(ids), in_range.sum()))
+    sfr = np.zeros((len(ids), in_range.sum()))
+
+    # brick_aexps = np.zeros(len(brick_files))
+
+    for ibrick, brick, snap in enumerate(
+        brick_fnames[in_range], brick_numbers[in_range]
+    ):
+
+        # brick_num = int(brick.split("_")[-1].split(".")[0])
+
+        print(ibrick, brick)
+
+        # closest tree step
+        closest_step = np.argmin(np.abs(tree_aexps - brick_aexps[ibrick]))
+        # print(np.shape(ids), closest_step)
+        closest_ids = ids[:, closest_step]
+
+        for i, gid in enumerate(closest_ids):
+
+            print(gid)
+
+            stars = gid_to_stars(gid, snap, hagn_sim, ["mass", "age", "metallicity"])
+            brick_data = get_hagn_brickfile_ids(brick, gid, star=True)
+
+            mstar[i, ibrick] = brick_data["mstar"]
+            sfr[i, ibrick] = brick_data["sfr"]
