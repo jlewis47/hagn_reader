@@ -62,10 +62,10 @@ def convert_hagn_star_units(stars: dict, snap, sim: ramses_sim):
     # print(aexp, sim.snap_numbers, snap)
 
     if "mass" in stars:
-        unit_d = sim.cosmo["unit_d"]
-        unit_l = sim.cosmo["unit_l"]
+        # unit_d = sim.cosmo["unit_d"]
+        # unit_l = sim.cosmo["unit_l"]
 
-        unit_m = unit_d * unit_l**3 / 2e33  # msun
+        unit_m = sim.unit_d(aexp) * sim.unit_l(aexp) ** 3 / 2e33  # msun
 
         stars["mass"] *= unit_m
 
@@ -112,6 +112,6 @@ def hagn_z_to_snap(z):
 
 def adaptahop_to_code_units(x, aexp, sim: ramses_sim):
 
-    box_len = sim.cosmo["unit_l"] / 3.08e24 / sim.aexp_stt * aexp
+    box_len = sim.unit_l(aexp) / 3.08e24  # * aexp
 
     return x / box_len + 0.5
