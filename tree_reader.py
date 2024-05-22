@@ -347,17 +347,25 @@ def read_tree_rev(
 
                         if nb_fathers > 1:  # if several follow main branch
                             massive_father = np.argmax(m_fathers)
+                            out_father = m_fathers[massive_father]
 
                             main_id = id_fathers[massive_father]
 
                         else:
 
                             main_id = id_fathers
+                            out_father = m_fathers
 
                         if "m_father" in target_fields:
-                            found_fields["m_father"][found_arg, istep - skip] = (
-                                m_fathers[massive_father]
-                            )
+                            # print(m_fathers, massive_father)
+                            found_fields["m_father"][
+                                found_arg, istep - skip
+                            ] = out_father
+
+                        if "nb_father" in target_fields:
+                            found_fields["nb_father"][
+                                found_arg, istep - skip
+                            ] = nb_fathers
 
                         if istep < nsteps - 1:
                             found_ids[found_arg, istep - skip + 1] = main_id
@@ -366,6 +374,8 @@ def read_tree_rev(
                             if debug:
                                 cur_arg = found_arg, istep - skip + 1
                                 print(found_ids[cur_arg], m, px, py, pz)
+
+                        # print(nb_fathers, out_father)
 
     return found_ids, found_fields, tree_aexps[skip:]
 
@@ -765,3 +775,69 @@ def follow_treebricks_sfr(aexp_stt, aexp_end, brick_dir, tree_aexps, ids):
 
             mstar[i, ibrick] = brick_data["mstar"]
             sfr[i, ibrick] = brick_data["sfr"]
+
+
+def interpolate_tree_position(
+    time, tree_times, tree_datas, hagn_l_pMpc, delta_t=5, every_snap=False
+):
+    if np.all(np.abs(time - tree_times) > delta_t) and every_snap:
+        arg = np.argsort(np.abs(time - tree_times))
+        # print(arg)
+        arg_p = arg[0]
+        if tree_times[arg_p] < time:
+            arg_p1 = arg[0] - 1
+        else:
+            arg_p = arg_p + 1
+            arg_p1 = arg[0] - 1
+
+        # print(arg_p, arg_p1, time, len(tree_times))  # , tree_times[arg_p])
+
+        if arg_p >= len(tree_times) or arg_p1 < 0:
+            return None, None
+
+        tgt_pos_p = np.asarray(
+            [
+                tree_datas["x"][arg_p],
+                tree_datas["y"][arg_p],
+                tree_datas["z"][arg_p],
+            ]
+        )
+        tgt_rad_p = tree_datas["r"][arg_p] / hagn_l_pMpc
+
+        tgt_pos_p1 = np.asarray(
+            [
+                tree_datas["x"][arg_p1],
+                tree_datas["y"][arg_p1],
+                tree_datas["z"][arg_p1],
+            ]
+        )
+        tgt_rad_p1 = tree_datas["r"][arg_p1] / hagn_l_pMpc
+
+        tgt_pos = tgt_pos_p + (tgt_pos_p1 - tgt_pos_p) * (time - tree_times[arg_p]) / (
+            tree_times[arg_p1] - tree_times[arg_p]
+        )
+
+        tgt_rad = tgt_rad_p + (tgt_rad_p1 - tgt_rad_p) * (time - tree_times[arg_p]) / (
+            tree_times[arg_p1] - tree_times[arg_p]
+        )
+        tgt_rad = tgt_rad
+
+    else:
+        tree_arg = np.argmin(np.abs(time - tree_times))
+        tgt_pos = np.asarray(
+            [
+                tree_datas["x"][tree_arg],
+                tree_datas["y"][tree_arg],
+                tree_datas["z"][tree_arg],
+            ]
+        )
+        tgt_rad = tree_datas["r"][tree_arg] / hagn_l_pMpc
+
+    tgt_pos += 0.5 * hagn_l_pMpc
+    # print(tgt_pos)
+    tgt_pos /= hagn_l_pMpc  # in code units or /comoving box size
+    # print(tgt_pos)
+    tgt_pos[tgt_pos < 0] += 1
+    tgt_pos[tgt_pos > 1] -= 1
+
+    return tgt_pos, tgt_rad
