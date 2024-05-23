@@ -1,4 +1,4 @@
-from .io import get_hagn_brickfile_stpids, get_pid_HAGN_stars
+from .IO import get_hagn_brickfile_stpids, get_pid_HAGN_stars
 
 
 def gid_to_stars(gid, snap, sim, fields):
