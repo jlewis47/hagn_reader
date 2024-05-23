@@ -5,7 +5,7 @@ import os
 from f90_tools.IO import read_record, skip_record
 
 from hagn.utils import adaptahop_to_code_units, get_hagn_sim
-from hagn.io import get_hagn_brickfile_aexp, get_hagn_brickfile_ids
+from hagn.IO import get_hagn_brickfile_aexp, get_hagn_brickfile_ids
 from hagn.association import gid_to_stars
 
 import h5py
